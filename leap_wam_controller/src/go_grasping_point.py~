@@ -1,0 +1,174 @@
+#!/usr/bin/env python
+import roslib; roslib.load_manifest('leap_wam_controller')
+import rospy
+import smach
+import smach_ros
+from iri_common_smach.st_get_pcl import GetPCL
+from estirabot_msgs.srv import TransformPose
+from geometry_msgs.msg import PoseStamped
+from iri_common_smach.utils_msg  import build_pose
+from iri_common_smach.st_sleep import WaitSeconds
+
+
+from iri_bow_object_detector.msg import *
+from iri_wam_common_msgs.msg import *
+
+from actionlib import *
+from actionlib.msg import *
+import rospkg
+import math
+rospack = rospkg.RosPack()
+import os
+
+PACKAGE_PATH = rospack.get_path('leap_wam_controller')
+CSV_PATH = PACKAGE_PATH + '/config/initial_grasping_points.csv'
+ROBOT_NAME=str(rospy.get_param('/leap_wam/ROBOT_NAME'))
+
+def grasping_point_goal_cb(userdata, goal):
+    goal = GetGraspingPointGoal()
+    goal.pointcloud = userdata.pcl_RGB
+    return goal
+
+
+
+class TransformPoseStamped(smach.State):
+    def __init__(self):
+        smach.State.__init__(self, outcomes=['succeeded','preempted','aborted'],
+                     input_keys=['sm_grasp_pose','sm_target_frame'],
+                     output_keys=['target_pose'])
+        self.service_topic = '/estirabot/skills/bow_detector/iri_transform_pose/transform_pose'
+    
+    def execute(self, userdata):
+        rospy.logdebug('Executing state TransformPoseStamped')
+        rospy.wait_for_service(self.service_topic)
+        try:
+            get_target_pose = rospy.ServiceProxy(self.service_topic, TransformPose)
+            resp = get_target_pose(userdata.sm_grasp_pose, userdata.sm_target_frame)
+            
+            userdata.target_pose = resp.target_pose_st
+            return 'succeeded'
+        
+        except rospy.ServiceException, e:
+            print "Service call failed: %s"%e
+            return 'aborted'
+
+class GraspPoseFromPoint(smach.State):
+    def __init__(self):
+        smach.State.__init__(self, input_keys=['grasp_point'], output_keys=['grasp_pose_st', 'target_frame'], outcomes=['done'])
+
+    def execute(self, ud):
+        position_g = PoseStamped()
+        position_g.pose = build_pose(ud.grasp_point.x, ud.grasp_point.y, ud.grasp_point.z, 0, 1, 0, 0)
+        position_g.header.frame_id = '/camera_rgb_optical_frame'
+        position_g.header.stamp = rospy.Time.now()
+        pub = rospy.Publisher('/debug/grasp_point', PoseStamped, None, False, True)
+        rospy.sleep(1) # wait for subscribers
+        pub.publish(position_g)
+        ud.grasp_pose_st = position_g
+
+        ud.target_frame = ROBOT_NAME+'_link_base'
+
+        return 'done'
+
+
+@smach.cb_interface(input_keys=['grasp_point'], output_keys=['grasp_pose_st', 'target_frame'], outcomes=['done'])
+def build_grasp_pose_from_point_cb(ud):
+    position = PoseStamped()
+    position.pose            = build_pose(ud.grasp_point.x, ud.grasp_point.y, ud.grasp_point.z, 0, 1, 0, 0)
+    position.header.frame_id = '/camera_rgb_optical_frame'
+    position.header.stamp = rospy.Time.now()
+    pub = rospy.Publisher('/debug/grasp_point', PoseStamped, None, False, True)
+    rospy.sleep(1) # wait for subscribers
+    pub.publish(position)
+    ud.grasp_pose_st = position
+    
+    ud.target_frame = ROBOT_NAME+'_link_base'
+    
+    return 'done'
+
+
+
+
+class PublishPose(smach.State):
+    def __init__(self):
+        smach.State.__init__(self, outcomes = ['success', 'aborted'], input_keys=['target_pose'])
+        self.lift_pose_publisher = rospy.Publisher('/pose_st', PoseStamped)
+        self.collar_grasp_point = PoseStamped()
+
+
+    def execute(self, userdata):
+        self.collar_grasp_point = userdata.target_pose
+        self.collar_grasp_point.header.frame_id = ROBOT_NAME+'_link_base'
+
+        # Set higher position than grasping point and make the gripper face the table
+        self.collar_grasp_point.pose.position.z = -0.25
+        self.collar_grasp_point.pose.orientation.x = 0
+        self.collar_grasp_point.pose.orientation.y = 1
+        self.collar_grasp_point.pose.orientation.z = 0
+        self.collar_grasp_point.pose.orientation.w = 0
+        self.position_list = [self.collar_grasp_point.pose.position.x, self.collar_grasp_point.pose.position.y, self.collar_grasp_point.pose.position.z, - math.asin(2 * self.collar_grasp_point.pose.orientation.x * self.collar_grasp_point.pose.orientation.y)]
+        if os.path.exists(CSV_PATH):
+            fd = open(CSV_PATH,'a')
+            self.writer2 = csv.writer(fd)
+            self.writer2.writerow(self.position_list)
+            fd.close()
+        else:
+            f = open(CSV_PATH,'w')
+            self.writer = csv.writer(f)
+            self.writer.writerow(self.position_list)
+            f.close()
+        
+        self.lift_pose_publisher.publish(self.collar_grasp_point)
+        rospy.loginfo('Arrived at grasp point')
+        return 'success'
+
+
+class DetectCollarAndGo(smach.StateMachine):
+    def __init__(self):
+        smach.StateMachine.__init__(self,
+                                    outcomes=['finishOk','failedVision'])
+
+
+        with self:
+
+            smach.StateMachine.add('GetPCL', GetPCL('/estirabot/camera/depth_registered/points'),
+                transitions={'success':'GetGraspingPointAction', 
+                        'fail':'failedVision'},
+                remapping={'pcl_RGB':'pcl_RGB'})
+
+            smach.StateMachine.add('GetGraspingPointAction', 
+                smach_ros.SimpleActionState('/estirabot/skills/bow_detector/bow_object_detector/get_grasping_point',
+                          GetGraspingPointAction,
+                          #goal_slots=['pcl_RGB'],
+                          goal_cb=grasping_point_goal_cb,
+                          input_keys=['pcl_RGB'],
+                          result_slots=['grasping_point']),
+                          #server_wait_timeout=rospy.Duration(10.0)),
+                transitions={'succeeded':'ConvertGraspPoint',
+                        'preempted':'failedVision',
+                        'aborted':'failedVision'},
+                remapping={'grasping_point':'sm_grasp_point'})
+
+            smach.StateMachine.add('ConvertGraspPoint', GraspPoseFromPoint(),
+                             # smach.CBState(build_grasp_pose_from_point_cb),
+                transitions={'done':'TransformPoseStamped'},
+                remapping={'grasp_point' : 'sm_grasp_point',
+                           'grasp_pose_st' : 'sm_grasp_pose',
+                           'target_frame' : 'sm_target_frame'})
+
+            smach.StateMachine.add('TransformPoseStamped', 
+                    TransformPoseStamped(),
+                transitions={'succeeded':'PUBLISH_POSE', 
+                        'preempted':'failedVision',
+                        'aborted':'failedVision'},
+                remapping={'target_pose':'target_pose'})
+
+            smach.StateMachine.add('PUBLISH_POSE', 
+                    PublishPose(),
+                transitions={'success':'SLEEP', 
+                        'aborted':'failedVision'})
+
+            # Wait for robot to move
+            smach.StateMachine.add('SLEEP', 
+                    WaitSeconds(10),
+                transitions={'finish':'finishOk'})

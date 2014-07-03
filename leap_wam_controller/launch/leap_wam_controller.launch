@@ -1,0 +1,17 @@
+<launch>
+  <!-- Publish Inverse Kinematics -->
+  <node pkg ="leap_wam_controller"
+        type="leap_wam_controller.py"
+        name="leap_wam_controller"
+        output="screen">
+
+    <param name="roll_scale" value="1"/>
+    <param name="pitch_scale" value="1.0"/>
+    <param name="yaw_scale" value="1.0"/>
+
+  </node>
+  <include file="$(find leap_node_linux)/launch/leap_node.launch"/>
+  <arg name="ROBOT" default="estirabot" />
+  <rosparam param="/leap_wam/ROBOT_NAME" subst_value="True">$(arg ROBOT)</rosparam>
+
+</launch>

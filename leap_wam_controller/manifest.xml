@@ -1,0 +1,25 @@
+<package>
+  <description brief="leap_wam_controller">
+
+     leap_wam_controller
+
+  </description>
+  <author>yisleyici</author>
+  <license>BSD</license>
+  <review status="unreviewed" notes=""/>
+  <url>http://ros.org/wiki/leap_wam_controller</url>
+  <depend package="rospy"/>
+  <depend package="leap_msgs"/>
+  <depend package="iri_wam_common_msgs"/>
+  <depend package="geometry_msgs"/>
+  <depend package="smach"/>
+  <depend package="smach_ros"/>
+  <depend package="iri_wam_smach"/>
+  <depend package="moveit_ros_planning_interface"/>
+  <depend package="moveit_core"/>
+  <depend package="moveit_ros_perception"/>
+  <depend package="pluginlib"/>
+  <rosdep name="octomap" />
+</package>
+
+

@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+
+<robot name="iri_wam">
+<virtual_joint name="ground_joint" type="planar" parent_frame="iri_wam_link_base" child_link="iri_wam_link_footprint"/> 
+<group name="arm">
+        <joint name="iri_wam_joint_1" />
+        <joint name="iri_wam_joint_2" />
+        <joint name="iri_wam_joint_3" />
+        <joint name="iri_wam_joint_4" />
+        <joint name="iri_wam_joint_5" />
+        <joint name="iri_wam_joint_6" />
+        <joint name="iri_wam_joint_7" />
+</group>
+
+</robot>
