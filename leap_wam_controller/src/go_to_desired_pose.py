@@ -34,7 +34,7 @@ class CheckForCollision(smach.State):
     '''Publishes the pose for DMP goal'''
     def __init__(self):
         smach.State.__init__(self, outcomes = ['success'], input_keys=['pose_st_checker','o_pose_st_checker'], output_keys=['o_pose_st_checker'])
-        self.pose_z_limit = -0.3
+        self.pose_z_limit = -0.25
 
     def execute(self, userdata):
         userdata.o_pose_st_checker = userdata.pose_st_checker

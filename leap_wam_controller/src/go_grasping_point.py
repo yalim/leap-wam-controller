@@ -102,7 +102,7 @@ class PublishPose(smach.State):
         self.collar_grasp_point.header.frame_id = ROBOT_NAME+'_link_base'
 
         # Set higher position than grasping point and make the gripper face the table
-        self.collar_grasp_point.pose.position.z = -0.25
+        self.collar_grasp_point.pose.position.z = -0.13
         self.collar_grasp_point.pose.orientation.x = 0
         self.collar_grasp_point.pose.orientation.y = 1
         self.collar_grasp_point.pose.orientation.z = 0
